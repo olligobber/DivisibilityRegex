@@ -5,6 +5,8 @@ import qualified Data.Set as S
 import Data.Array (Array, (!))
 import qualified Data.Array as A
 import Data.Maybe (maybe)
+import Control.Monad (guard)
+import Data.Function (on)
 
 newtype DFA c = DFA {
     states :: Array Integer (DFAState c)
@@ -121,3 +123,37 @@ dfaFromMap start accept alph trans = dfaRecurse
     (maybe False (`S.member` accept))
     alph
     (maybe (const Nothing) $ curry (trans !?))
+
+type EqTable = Set (Integer, Integer)
+
+-- Make the set of all pairs of states where both accept or both don't accept
+startEqTable :: DFA c -> EqTable
+startEqTable dfa = S.fromList $ do
+    (firststatenum, firststate) <- A.assocs $ states dfa
+    (secondstatenum, secondstate) <- A.assocs $ states dfa
+    guard $ ((==) `on` accepting) firststate secondstate
+    return (firststatenum, secondstatenum)
+
+-- Removes a pair from the table if taking any transition leads to a pair not in the table
+updatePair :: DFA c -> EqTable -> (Integer, Integer) -> EqTable
+updatepair dfa table (pair@(firststatenum, secondstatenum))
+    | equiv     = table
+    | otherwise = S.delete pair table
+    where
+        bimap = (M.intersectionWith (,) `on` transition . (states dfa !)) firststatenum secondstatenum
+        equiv = all (`S.member` table) bimap
+
+-- Update every pair in the table once
+updateAllPairs :: DFA c -> EqTable -> EqTable
+updateAllPairs dfa table = foldl (updatePair dfa) table table
+
+-- Update the table until it is fixed
+solveTable :: DFA c -> EqTable -> EqTable
+solveTable dfa table
+    | nextTable == table    = table
+    | otherwise             = solveTable dfa nextTable
+    where
+        nextTable = updateAllPairs dfa table
+
+-- Minimise the number of states a DFA has
+minimise :: DFA c -> DFA c
