@@ -1,13 +1,28 @@
+module Regulars (
+    DFA,
+    alphabet,
+    numstates,
+    move,
+    accepts,
+    parse,
+    dfaRecurse,
+    dfaFromMap,
+    minimise
+) where
+
 import Data.Map.Lazy (Map, (!?))
 import qualified Data.Map.Lazy as M
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Array (Array, (!))
 import qualified Data.Array as A
-import Data.Maybe (maybe)
+import qualified UnionFind as U
+import qualified Control.Monad.State as State
+import Data.Maybe (maybe, fromMaybe)
 import Control.Monad (guard)
 import Data.Function (on)
 
+-- States in a DFA are represented by integers 1..n, where 1 is the start state
 newtype DFA c = DFA {
     states :: Array Integer (DFAState c)
     }
@@ -28,14 +43,18 @@ numstates = snd . A.bounds . states
 -- Perform a single transition along a DFA
 move :: Ord c => DFA c -> Integer -> c -> Integer
 move dfa state letter
-    | A.bounds (states dfa) `A.inRange` state = case transition (states dfa ! state) !? letter of
-        Nothing -> error "DFA transition failed: letter not in alphabet"
-        Just x -> x
+    | A.bounds (states dfa) `A.inRange` state =
+        fromMaybe (error "DFA transition failed: letter not in alphabet") $
+            transition (states dfa ! state) !? letter
     | otherwise = error "DFA transition failed: state not in DFA"
+
+-- Check if a dfa state accepts
+accepts :: DFA c -> Integer -> Bool
+accepts dfa = accepting . (states dfa !)
 
 -- Parse a string
 parse :: Ord c => DFA c -> [c] -> Bool
-parse dfa = accepting . (states dfa !) . foldl (move dfa) 1
+parse dfa = accepts dfa . foldl (move dfa) 1
 
 -- Partially constructed DFA
 data PartialDFA s c = PartialDFA {
@@ -54,10 +73,10 @@ data PartialState s c = PartialState {
 }
 
 newpartialstate :: Map s Integer -> Integer -> PartialState s c
-newpartialstate mapping num = PartialState mapping [] num M.empty
+newpartialstate mapping thisnum = PartialState mapping [] thisnum M.empty
 
 procpartialstate :: (Ord s, Ord c) => s -> (s -> c -> s) -> PartialState s c -> c -> PartialState s c
-procpartialstate statename transition partstate letter =
+procpartialstate statename trans partstate letter =
     case statemapping' partstate !? nextstatename of
         Just nextstate -> modifystate
             id
@@ -65,13 +84,13 @@ procpartialstate statename transition partstate letter =
             id
             (M.insert letter nextstate)
         Nothing -> modifystate
-            (M.insert (nextstatename) newstatenum)
+            (M.insert nextstatename newstatenum)
             ((newstatenum, nextstatename):)
             succ
             (M.insert letter newstatenum)
     where
         newstatenum = num' partstate + 1
-        nextstatename = transition statename letter
+        nextstatename = trans statename letter
         modifystate a b c d = PartialState
             (a $ statemapping' partstate)
             (b $ newstates partstate)
@@ -135,8 +154,8 @@ startEqTable dfa = S.fromList $ do
     return (firststatenum, secondstatenum)
 
 -- Removes a pair from the table if taking any transition leads to a pair not in the table
-updatePair :: DFA c -> EqTable -> (Integer, Integer) -> EqTable
-updatepair dfa table (pair@(firststatenum, secondstatenum))
+updatePair :: Ord c => DFA c -> EqTable -> (Integer, Integer) -> EqTable
+updatePair dfa table pair@(firststatenum, secondstatenum)
     | equiv     = table
     | otherwise = S.delete pair table
     where
@@ -144,16 +163,33 @@ updatepair dfa table (pair@(firststatenum, secondstatenum))
         equiv = all (`S.member` table) bimap
 
 -- Update every pair in the table once
-updateAllPairs :: DFA c -> EqTable -> EqTable
+updateAllPairs :: Ord c => DFA c -> EqTable -> EqTable
 updateAllPairs dfa table = foldl (updatePair dfa) table table
 
 -- Update the table until it is fixed
-solveTable :: DFA c -> EqTable -> EqTable
+solveTable :: Ord c => DFA c -> EqTable -> EqTable
 solveTable dfa table
     | nextTable == table    = table
     | otherwise             = solveTable dfa nextTable
     where
         nextTable = updateAllPairs dfa table
 
+-- Convert a table to an array mapping equivalent states to the same number
+convertTable :: DFA c -> EqTable -> Array Integer Integer
+convertTable dfa table = State.evalState (allunions >> U.toArray) startuf where
+    allunions = mapM_ (uncurry U.union) table
+    startuf = U.new $ A.bounds $ states dfa
+
+-- Map each state in a DFA to some equivalent state so that all equivalent states are mapped to the same
+eqMapping :: Ord c => DFA c -> Integer -> Integer
+eqMapping = (!) . (startEqTable >>= flip solveTable >>= flip convertTable)
+
 -- Minimise the number of states a DFA has
-minimise :: DFA c -> DFA c
+minimise :: Ord c => DFA c -> DFA c
+minimise dfa = dfaRecurse
+    (newstate 1)
+    (accepts dfa)
+    (S.toList $ alphabet dfa)
+    (move dfa . newstate)
+    where
+        newstate = eqMapping dfa
