@@ -28,15 +28,21 @@ new bounds = UnionFind $ A.listArray bounds $ repeat $ RootRank 0
 
 -- Extract a union element from a unionfind
 extract :: Ix i => i -> UnionFindS i (UnionElement i)
-extract mem = S.gets $ \union -> member union ! mem
+extract mem = S.gets $ \uf -> member uf ! mem
 
 -- Set a union element's parent
 setparent :: Ix i => i -> i -> UnionFindS i ()
-setparent child parent = S.modify $ \union -> UnionFind $ member union // [(child, ChildOf parent)]
+setparent child parent
+    | child == parent   = error "Unionfind contains loop"
+    | otherwise         = S.modify $ \uf -> UnionFind $ member uf // [(child, ChildOf parent)]
 
 -- Set a union element as a root with a given rank
 setrank :: Ix i => i -> Integer -> UnionFindS i ()
-setrank root rank = S.modify $ \union -> UnionFind $ member union // [(root, RootRank rank)]
+setrank root rank = do
+    array <- S.gets member
+    case array ! root of
+        ChildOf _ -> error "Tried to make non-root of Unionfind into a root"
+        RootRank _ -> S.put $ UnionFind $ array // [(root, RootRank rank)]
 
 -- Find the root of an element's union
 find :: Ix i => i -> UnionFindS i i
