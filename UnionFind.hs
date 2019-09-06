@@ -15,17 +15,17 @@ import Control.Monad.State (State)
 import qualified Control.Monad.State as S
 
 -- Gets a value from a map-like type
-type Getter m i = forall v. m i v -> i -> v
+type Getter m i = forall v. m v -> i -> v
 
 -- Sets a value in a map-like type
-type Setter m i = forall v. m i v -> i -> v -> m i v
+type Setter m i = forall v. m v -> i -> v -> m v
 
 -- UnionFind based on an arbitrary map-like type
 data UnionFind m i = UnionFind {
     getter :: Getter m i,
     setter :: Setter m i,
-    members :: m i (UnionElement i),
-    identity :: m i i
+    members :: m (UnionElement i),
+    identity :: m i
 }
 
 data UnionElement i = ChildOf i | RootRank Integer
@@ -49,7 +49,7 @@ getRank (RootRank x) = x
 getRank _ = error "Element is not a root"
 
 -- Make a unionfind where everything is seperate given the map-like type prefilled with indices mapping to themselves
-new :: Functor (m i) => Getter m i -> Setter m i -> m i i -> UnionFind m i
+new :: Functor m => Getter m i -> Setter m i -> m i -> UnionFind m i
 new get set structure = UnionFind get set (const (RootRank 0) <$> structure) structure
 
 -- Stateful UnionFind operations
@@ -100,5 +100,5 @@ union mem1 mem2 = do
                 setrank root2 $ rank2 + 1
 
 -- Extract the underlying map-like type mapping each element to its representative
-flatten :: (Eq i, Traversable (m i)) => UnionFindS m i (m i i)
+flatten :: (Eq i, Traversable m) => UnionFindS m i (m i)
 flatten = S.gets identity >>= mapM find

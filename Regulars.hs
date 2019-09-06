@@ -25,12 +25,12 @@ import Data.Function (on)
 -- States in a DFA are represented by integers 1..n, where 1 is the start state
 newtype DFA c = DFA {
     states :: Array Integer (DFAState c)
-    }
+}
 
 data DFAState c = DFAState {
     accepting :: Bool,
     transition :: Map c Integer
-    } deriving (Show, Eq) -- Debug
+}
 
 -- Gets the letters available for a DFA to parse
 alphabet :: DFA c -> Set c
@@ -62,7 +62,7 @@ data PartialDFA s c = PartialDFA {
     completestates :: [(Integer, DFAState c)], -- fully constructed DFA states
     incompletestates :: [(Integer, s)], -- DFA states that need to be constructed
     num :: Integer -- number of DFA states both constructed and not yet
-    }
+}
 
 -- Partiall constructed DFA state
 data PartialState s c = PartialState {
