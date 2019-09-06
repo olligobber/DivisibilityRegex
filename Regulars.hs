@@ -14,7 +14,7 @@ import Data.Map.Lazy (Map, (!?))
 import qualified Data.Map.Lazy as M
 import Data.Set (Set)
 import qualified Data.Set as S
-import Data.Array (Array, (!))
+import Data.Array (Array, (!), (//))
 import qualified Data.Array as A
 import qualified UnionFind as U
 import qualified Control.Monad.State as State
@@ -30,7 +30,7 @@ newtype DFA c = DFA {
 data DFAState c = DFAState {
     accepting :: Bool,
     transition :: Map c Integer
-    }
+    } deriving (Show, Eq) -- Debug
 
 -- Gets the letters available for a DFA to parse
 alphabet :: DFA c -> Set c
@@ -176,9 +176,9 @@ solveTable dfa table
 
 -- Convert a table to an array mapping equivalent states to the same number
 convertTable :: DFA c -> EqTable -> Array Integer Integer
-convertTable dfa table = State.evalState (allunions >> U.toArray) startuf where
+convertTable dfa table = State.evalState (allunions >> U.flatten) startuf where
     allunions = mapM_ (uncurry U.union) table
-    startuf = U.new $ A.bounds $ states dfa
+    startuf = U.new (!) (\x y z -> x // [(y,z)]) $ A.listArray (A.bounds $ states dfa) [1..]
 
 -- Map each state in a DFA to some equivalent state so that all equivalent states are mapped to the same
 eqMapping :: Ord c => DFA c -> Integer -> Integer
@@ -190,6 +190,6 @@ minimise dfa = dfaRecurse
     (newstate 1)
     (accepts dfa)
     (S.toList $ alphabet dfa)
-    (move dfa . newstate)
+    (\s c -> newstate $ move dfa s c)
     where
         newstate = eqMapping dfa

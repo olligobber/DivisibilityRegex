@@ -1,51 +1,80 @@
+{-# LANGUAGE RankNTypes #-}
+
 module UnionFind (
+    Getter,
+    Setter,
     UnionFind,
     UnionFindS,
     new,
     find,
     union,
-    toArray
+    flatten
 ) where
 
-import Data.Array (Array, (!), Ix, (//))
-import qualified Data.Array as A
 import Control.Monad.State (State)
 import qualified Control.Monad.State as S
 
-newtype UnionFind i = UnionFind { member :: Array i (UnionElement i) }
+-- Gets a value from a map-like type
+type Getter m i = forall v. m i v -> i -> v
 
-type UnionFindS i = State (UnionFind i)
+-- Sets a value in a map-like type
+type Setter m i = forall v. m i v -> i -> v -> m i v
+
+-- UnionFind based on an arbitrary map-like type
+data UnionFind m i = UnionFind {
+    getter :: Getter m i,
+    setter :: Setter m i,
+    members :: m i (UnionElement i),
+    identity :: m i i
+}
 
 data UnionElement i = ChildOf i | RootRank Integer
+
+-- Specialised setters and getters for UnionFind
+infix 9 !
+infix 9 //
+
+(!) :: UnionFind m i -> i -> UnionElement i
+uf ! index = getter uf (members uf) index
+
+(//) :: UnionFind m i -> (i, UnionElement i) -> UnionFind m i
+uf // (index, value) = UnionFind
+    (getter uf)
+    (setter uf)
+    (setter uf (members uf) index value)
+    (identity uf)
 
 getRank :: UnionElement i -> Integer
 getRank (RootRank x) = x
 getRank _ = error "Element is not a root"
 
--- Make a unionfind where everything is seperate given the bounds
-new :: Ix i => (i, i) -> UnionFind i
-new bounds = UnionFind $ A.listArray bounds $ repeat $ RootRank 0
+-- Make a unionfind where everything is seperate given the map-like type prefilled with indices mapping to themselves
+new :: Functor (m i) => Getter m i -> Setter m i -> m i i -> UnionFind m i
+new get set structure = UnionFind get set (const (RootRank 0) <$> structure) structure
 
--- Extract a union element from a unionfind
-extract :: Ix i => i -> UnionFindS i (UnionElement i)
-extract mem = S.gets $ \uf -> member uf ! mem
+-- Stateful UnionFind operations
+type UnionFindS m i = State (UnionFind m i)
 
--- Set a union element's parent
-setparent :: Ix i => i -> i -> UnionFindS i ()
+-- Stateful getter for unionfind
+extract :: i -> UnionFindS m i (UnionElement i)
+extract mem = S.gets $ (! mem)
+--
+-- Set a unionfind element's parent
+setparent :: Eq i => i -> i -> UnionFindS m i ()
 setparent child parent
-    | child == parent   = error "Unionfind contains loop"
-    | otherwise         = S.modify $ \uf -> UnionFind $ member uf // [(child, ChildOf parent)]
+    | child == parent   = error "Tried to make loop in UnionFind"
+    | otherwise         = S.modify $ (// (child, ChildOf parent))
 
--- Set a union element as a root with a given rank
-setrank :: Ix i => i -> Integer -> UnionFindS i ()
+-- Set a unionfind element as a root with a given rank
+setrank :: i -> Integer -> UnionFindS m i ()
 setrank root rank = do
-    array <- S.gets member
-    case array ! root of
-        ChildOf _ -> error "Tried to make non-root of Unionfind into a root"
-        RootRank _ -> S.put $ UnionFind $ array // [(root, RootRank rank)]
+    rootVal <- extract root
+    case rootVal of
+        ChildOf _ -> error "Tried to make non-root of UnionFind into a root"
+        RootRank _ -> S.modify $ (// (root, RootRank rank))
 
--- Find the root of an element's union
-find :: Ix i => i -> UnionFindS i i
+-- Find the representative of an element's set
+find :: Eq i => i -> UnionFindS m i i
 find mem = do
     memele <- extract mem
     case memele of
@@ -56,7 +85,7 @@ find mem = do
             return root
 
 -- Join two sets
-union :: Ix i => i -> i -> UnionFindS i ()
+union :: Eq i => i -> i -> UnionFindS m i ()
 union mem1 mem2 = do
     root1 <- find mem1
     root2 <- find mem2
@@ -70,10 +99,6 @@ union mem1 mem2 = do
                 setparent root1 root2
                 setrank root2 $ rank2 + 1
 
--- Extract an array mapping each element to root of its union
-toArray :: Ix i => UnionFindS i (Array i i)
-toArray = do
-    bounds <- S.gets $ A.bounds . member
-    indices <- S.gets $ A.indices . member
-    roots <- mapM find indices
-    return $ A.listArray bounds roots
+-- Extract the underlying map-like type mapping each element to its representative
+flatten :: (Eq i, Traversable (m i)) => UnionFindS m i (m i i)
+flatten = S.gets identity >>= mapM find
