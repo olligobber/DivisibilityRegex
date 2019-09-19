@@ -50,20 +50,20 @@ getRank _ = error "Element is not a root"
 
 -- Make a unionfind where everything is seperate given the map-like type prefilled with indices mapping to themselves
 new :: Functor m => Getter m i -> Setter m i -> m i -> UnionFind m i
-new get set structure = UnionFind get set (const (RootRank 0) <$> structure) structure
+new get set structure = UnionFind get set (RootRank 0 <$ structure) structure
 
 -- Stateful UnionFind operations
 type UnionFindS m i = State (UnionFind m i)
 
 -- Stateful getter for unionfind
 extract :: i -> UnionFindS m i (UnionElement i)
-extract mem = S.gets $ (! mem)
+extract mem = S.gets (! mem)
 --
 -- Set a unionfind element's parent
 setparent :: Eq i => i -> i -> UnionFindS m i ()
 setparent child parent
     | child == parent   = error "Tried to make loop in UnionFind"
-    | otherwise         = S.modify $ (// (child, ChildOf parent))
+    | otherwise         = S.modify (// (child, ChildOf parent))
 
 -- Set a unionfind element as a root with a given rank
 setrank :: i -> Integer -> UnionFindS m i ()
@@ -71,7 +71,7 @@ setrank root rank = do
     rootVal <- extract root
     case rootVal of
         ChildOf _ -> error "Tried to make non-root of UnionFind into a root"
-        RootRank _ -> S.modify $ (// (root, RootRank rank))
+        RootRank _ -> S.modify (// (root, RootRank rank))
 
 -- Find the representative of an element's set
 find :: Eq i => i -> UnionFindS m i i

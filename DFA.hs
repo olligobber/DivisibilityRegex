@@ -1,4 +1,4 @@
-module Regulars (
+module DFA (
     DFA,
     alphabet,
     numstates,
