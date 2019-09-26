@@ -9,7 +9,8 @@ module Regex (
     char,
     conc,
     union,
-    star
+    star,
+    isEmpty -- debug
 ) where
 
 import Data.Set (Set)
@@ -22,6 +23,10 @@ newtype Fix f = Fix { unFix :: f (Fix f) }
 cata :: Functor f => (f a -> a) -> (Fix f -> a)
 cata f = f . fmap (cata f) . unFix
 
+-- Debug
+instance Show (f (Fix f)) => Show (Fix f) where
+    showsPrec n x = showParen (n>10) $ \s -> "Fix " ++ showsPrec 11 (unFix x) s
+
 -- Regex represented recursively using a functor fixed point
 type Regex c = Fix (RegexF c)
 
@@ -29,9 +34,11 @@ data RegexF c x =
     Conc [x] | -- Concatenate a list of regex
     Star x | -- Star closure of regex
     Disj (SingleChar c) [x] -- Union of a single character with a list of regex
+    deriving Show -- Debug
 
 -- Match a character that is either in or not in a set
 data SingleChar c = In (Set c) | NotIn (Set c)
+    deriving Show -- debug
 
 instance Functor (RegexF c) where
     fmap f (Conc list) = Conc $ fmap f list
