@@ -22,6 +22,11 @@ import Data.Function (on)
 -- from Data.Fix
 newtype Fix f = Fix { unFix :: f (Fix f) }
 
+-- debug
+instance Show (f (Fix f)) => Show (Fix f) where
+    showsPrec n x = showParen (n > 10) $ \s ->
+        "Fix " ++ showsPrec 11 (unFix x) s
+
 cata :: Functor f => (f a -> a) -> (Fix f -> a)
 cata f = f . fmap (cata f) . unFix
 
@@ -32,9 +37,11 @@ data RegexF c x =
     Conc [x] | -- Concatenate a list of regex
     Star x | -- Star closure of regex
     Disj (SingleChar c) [x] -- Union of a single character with a list of regex
+    deriving (Show) -- debug
 
 -- Match a character that is either in or not in a set
 data SingleChar c = In (Set c) | NotIn (Set c)
+    deriving (Show) -- debug
 
 instance Functor (RegexF c) where
     fmap f (Conc list) = Conc $ fmap f list
@@ -107,10 +114,18 @@ isEmpty :: Regex c -> Bool
 isEmpty (Fix (Disj (In set) [])) = S.null set
 isEmpty _ = False
 
+-- Check if regex is epsilon
+isEpsilon :: Regex c -> Bool
+isEpsilon (Fix (Conc [])) = True
+isEpsilon _ = False
+
 -- Concatenate regex
 conc :: Regex c -> Regex c -> Regex c
 conc _ regex | isEmpty regex = empty
 conc regex _ | isEmpty regex = empty
+conc regex1 regex2
+    | isEpsilon regex1 = regex2
+    | isEpsilon regex2 = regex1
 conc (Fix (Conc list1)) (Fix (Conc list2)) = Fix $ Conc $ list1 ++ list2
 conc (Fix (Conc list)) regex = Fix $ Conc $ list ++ [regex]
 conc regex (Fix (Conc list)) = Fix $ Conc $ regex:list
@@ -125,6 +140,9 @@ unionSingle (NotIn set1) (NotIn set2) = NotIn $ set1 `S.intersection` set2
 
 -- Union regex
 union :: Ord c => Regex c -> Regex c -> Regex c
+union regex1 regex2
+    | isEmpty regex1 = regex2
+    | isEmpty regex2 = regex1
 union (Fix (Disj singlechar1 list1)) (Fix (Disj singlechar2 list2)) =
     Fix $ Disj (singlechar1 `unionSingle` singlechar2) $ list1 ++ list2
 union (Fix (Disj singlechar list)) regex = Fix $ Disj singlechar $ regex:list
@@ -133,7 +151,9 @@ union regex1 regex2 = Fix $ Disj (In S.empty) [regex1, regex2]
 
 -- Star closure regex
 star :: Regex c -> Regex c
-star regex | isEmpty regex = epsilon
+star regex
+    | isEmpty regex = epsilon
+    | isEpsilon regex = epsilon
 star (Fix (Star regex)) = Fix $ Star regex
 star regex = Fix $ Star regex
 
