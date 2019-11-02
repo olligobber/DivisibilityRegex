@@ -1,6 +1,8 @@
 module GNFA (
-    dfaToRegexByOrder
-    -- TODO
+    dfaToRegexByOrder,
+    dfaToRegexMinimal,
+    dfaToRegexRandom,
+    dfaToRegexRandomAttempts
 ) where
 
 import DFA (DFA)
@@ -10,6 +12,8 @@ import qualified Regex
 import Data.Array (Array, (!), (//))
 import qualified Data.Array as A
 import qualified Data.Set as S
+import System.Random (RandomGen, randomR)
+import Data.Semigroup (stimesMonoid, Endo(..), appEndo)
 
 -- States in a GNFA are represented by integers 1..n+2, where 1 is the start state and 2 is the accept state
 newtype GNFA c = GNFA { transitions :: Array (Integer, Integer) (Regex c) }
@@ -32,7 +36,7 @@ addTransition gnfa (a, letter, b) = GNFA $ transitions gnfa //
 -- Get the transition start -> end if the state elim is removed
 getNewTransition :: Ord c => GNFA c -> Integer -> (Integer, Integer) -> Regex c
 getNewTransition gnfa elim (start, end) =
-    (r1 `Regex.conc` (Regex.star r2) `Regex.conc` r3) `Regex.union` r4
+    (r1 `Regex.conc` Regex.star r2 `Regex.conc` r3) `Regex.union` r4
     where
         r1 = transitions gnfa ! (start, elim)
         r2 = transitions gnfa ! (elim, elim)
@@ -64,4 +68,38 @@ dfaToRegexByOrder order dfa = extractRegex $ foldl removeState (fromDFA dfa) fix
     fixedOrder = zipWith (\x i -> ((x - 1) `mod` i) + 3) order [n,n-1..1]
     n = DFA.numstates dfa
 
---
+-- Get all possible orders to remove states
+allOrders :: Integer -> [[Integer]]
+allOrders 0 = [[]]
+allOrders n
+    | n > 0     = (:) <$> [1..n] <*> allOrders (n-1)
+    | otherwise = error "Cannot remove a negative number of states"
+
+-- Convert a dfa to regex by removing states in all possible orders and keeping the shortest regex
+dfaToRegexMinimal :: Ord c => DFA c -> Regex c
+dfaToRegexMinimal dfa = foldl update (dfaToRegexByOrder (repeat 1) dfa) (allOrders n) where
+    n = DFA.numstates dfa
+    update regex order = Regex.smallest regex (dfaToRegexByOrder order dfa)
+
+-- Get a random order to remove states
+randomOrder :: RandomGen g => g -> Integer -> (g, [Integer])
+randomOrder gen 0 = (gen, [])
+randomOrder gen n
+    | n < 0     = error "Cannot remove a negative number of states"
+    | otherwise = let (x, gen') = randomR (1,n) gen in
+        (x:) <$> randomOrder gen' (n-1)
+
+-- Convert a dfa to regex by removing states in a random order
+dfaToRegexRandom :: (Ord c, RandomGen g) => g -> DFA c -> (g, Regex c)
+dfaToRegexRandom gen dfa = flip dfaToRegexByOrder dfa <$> randomOrder gen (DFA.numstates dfa)
+
+-- Given a regex, try to make a shorter one
+dfaAttempt :: (Ord c, RandomGen g) => DFA c -> Endo (g, Regex c)
+dfaAttempt dfa = Endo $ \(gen, regex) ->
+    Regex.smallest regex <$> dfaToRegexRandom gen dfa
+
+-- Convert a dfa to regex by trying some number of random attempts and picking the smallest
+dfaToRegexRandomAttempts :: (Ord c, RandomGen g) => g -> Integer -> DFA c -> (g, Regex c)
+dfaToRegexRandomAttempts gen n dfa
+    | n < 1     = error "Cannot make less than one attempt"
+    | otherwise = appEndo (stimesMonoid (n-1) (dfaAttempt dfa)) $ dfaToRegexRandom gen dfa
