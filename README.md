@@ -10,6 +10,7 @@ When `main.hs` is compiled, the resulting program takes 1-3 arguments;
 ## Example usage
 
 ```
+$ ghc -dynamic main.hs
 $ ./main 2          # try one attempt at multiples of 2 in base 10
 ([02468]|[13579][13579]*[02468])*
 $
