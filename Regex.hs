@@ -134,8 +134,8 @@ conc regex1 regex2 = Fix $ Conc [regex1, regex2]
 -- Union two single characters
 unionSingle :: Ord c => SingleChar c -> SingleChar c -> SingleChar c
 unionSingle (In set1) (In set2) = In $ set1 <> set2
-unionSingle (In set1) (NotIn set2) = In $ set1 `S.difference` set2
-unionSingle (NotIn set1) (In set2) = In $ set2 `S.difference` set1
+unionSingle (In set1) (NotIn set2) = NotIn $ set2 `S.difference` set1
+unionSingle (NotIn set1) (In set2) = NotIn $ set1 `S.difference` set2
 unionSingle (NotIn set1) (NotIn set2) = NotIn $ set1 `S.intersection` set2
 
 -- Union regex
